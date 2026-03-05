@@ -1,0 +1,1155 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>RunForm AI — 달리기 자세 분석</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Noto+Sans+KR:wght@300;400;700;900&display=swap');
+
+  :root {
+    --bg: #080c10;
+    --surface: #0e1520;
+    --border: #1a2535;
+    --accent: #00e5ff;
+    --accent2: #ff3d71;
+    --accent3: #a8ff3e;
+    --text: #e8f0ff;
+    --muted: #4a6080;
+    --ok: #a8ff3e;
+    --warn: #ffb830;
+    --bad: #ff3d71;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Noto Sans KR', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Header */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(8,12,16,0.95);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    font-family: 'Space Mono', monospace;
+    font-size: 18px;
+    color: var(--accent);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  .logo span {
+    color: var(--accent2);
+  }
+
+  .status-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--muted);
+    font-family: 'Space Mono', monospace;
+  }
+
+  .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: all 0.3s;
+  }
+  .dot.active { background: var(--ok); box-shadow: 0 0 8px var(--ok); animation: pulse 1.5s infinite; }
+  .dot.loading { background: var(--warn); animation: pulse 0.8s infinite; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  /* Main layout */
+  main {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  /* Camera Section */
+  .camera-section {
+    position: relative;
+    width: 100%;
+    background: #000;
+  }
+
+  .camera-wrapper {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 9/16;
+    max-height: 65vh;
+    overflow: hidden;
+    background: #000;
+  }
+
+  @media (orientation: landscape) {
+    .camera-wrapper {
+      aspect-ratio: 16/9;
+      max-height: 100vh;
+    }
+  }
+
+  #videoEl {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transform: scaleX(-1);
+  }
+
+  #poseCanvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    transform: scaleX(-1);
+  }
+
+  /* Overlay UI on camera */
+  .cam-overlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none;
+  }
+
+  .scan-line {
+    position: absolute;
+    left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity: 0;
+    animation: scan 3s ease-in-out infinite;
+  }
+
+  @keyframes scan {
+    0% { top: 0%; opacity: 0; }
+    5% { opacity: 0.6; }
+    95% { opacity: 0.6; }
+    100% { top: 100%; opacity: 0; }
+  }
+
+  .corner {
+    position: absolute;
+    width: 24px; height: 24px;
+    border-color: var(--accent);
+    border-style: solid;
+    opacity: 0.6;
+  }
+  .corner.tl { top: 12px; left: 12px; border-width: 2px 0 0 2px; }
+  .corner.tr { top: 12px; right: 12px; border-width: 2px 2px 0 0; }
+  .corner.bl { bottom: 12px; left: 12px; border-width: 0 0 2px 2px; }
+  .corner.br { bottom: 12px; right: 12px; border-width: 0 2px 2px 0; }
+
+  .fps-counter {
+    position: absolute;
+    top: 16px;
+    right: 48px;
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: var(--accent);
+    opacity: 0.7;
+    background: rgba(0,0,0,0.5);
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+
+  /* Camera controls */
+  .cam-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    padding: 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px;
+    font-family: 'Noto Sans KR', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #000;
+  }
+  .btn-primary:active { transform: scale(0.96); }
+  .btn-primary.recording { background: var(--bad); animation: rec-pulse 1s infinite; }
+
+  @keyframes rec-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255,61,113,0.4); }
+    50% { box-shadow: 0 0 0 8px rgba(255,61,113,0); }
+  }
+
+  .btn-secondary {
+    background: var(--border);
+    color: var(--text);
+  }
+  .btn-secondary:active { transform: scale(0.96); }
+
+  .btn-icon {
+    width: 44px; height: 44px;
+    padding: 0;
+    border-radius: 50%;
+    justify-content: center;
+    background: var(--border);
+    color: var(--text);
+    font-size: 18px;
+  }
+
+  /* Loading overlay */
+  .loading-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(8,12,16,0.9);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    z-index: 10;
+  }
+
+  .loading-overlay.hidden { display: none; }
+
+  .loader-ring {
+    width: 56px; height: 56px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loading-text {
+    font-family: 'Space Mono', monospace;
+    font-size: 13px;
+    color: var(--accent);
+    letter-spacing: 1px;
+  }
+
+  .loading-sub {
+    font-size: 11px;
+    color: var(--muted);
+    text-align: center;
+    padding: 0 20px;
+  }
+
+  /* Analysis Panel */
+  .analysis-panel {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .section-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  /* Score cards */
+  .score-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+
+  .score-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.3s;
+  }
+
+  .score-card.ok { border-color: rgba(168,255,62,0.3); }
+  .score-card.warn { border-color: rgba(255,184,48,0.3); }
+  .score-card.bad { border-color: rgba(255,61,113,0.3); }
+
+  .score-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--muted);
+    transition: background 0.3s;
+  }
+  .score-card.ok::before { background: var(--ok); }
+  .score-card.warn::before { background: var(--warn); }
+  .score-card.bad::before { background: var(--bad); }
+
+  .score-icon { font-size: 20px; }
+
+  .score-value {
+    font-family: 'Space Mono', monospace;
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--muted);
+    transition: color 0.3s;
+  }
+  .score-card.ok .score-value { color: var(--ok); }
+  .score-card.warn .score-value { color: var(--warn); }
+  .score-card.bad .score-value { color: var(--bad); }
+
+  .score-label {
+    font-size: 11px;
+    color: var(--muted);
+    text-align: center;
+    line-height: 1.2;
+  }
+
+  /* Angle bars */
+  .metrics-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .metric-row {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .metric-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .metric-name {
+    font-size: 13px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .metric-val {
+    font-family: 'Space Mono', monospace;
+    font-size: 16px;
+    font-weight: 700;
+  }
+
+  .metric-bar-bg {
+    height: 5px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .metric-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.3s ease, background 0.3s;
+  }
+
+  .metric-status {
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  /* Feedback section */
+  .feedback-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .feedback-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .feedback-item {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    font-size: 13px;
+    line-height: 1.4;
+    padding: 8px 10px;
+    border-radius: 7px;
+    background: rgba(255,255,255,0.03);
+  }
+
+  .feedback-item.ok { border-left: 3px solid var(--ok); }
+  .feedback-item.warn { border-left: 3px solid var(--warn); }
+  .feedback-item.bad { border-left: 3px solid var(--bad); }
+
+  .feedback-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 4px;
+  }
+  .feedback-item.ok .feedback-dot { background: var(--ok); }
+  .feedback-item.warn .feedback-dot { background: var(--warn); }
+  .feedback-item.bad .feedback-dot { background: var(--bad); }
+
+  /* No pose state */
+  .no-pose-msg {
+    text-align: center;
+    padding: 24px;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .no-pose-msg .icon { font-size: 32px; margin-bottom: 8px; }
+
+  /* Permissions error */
+  .cam-error {
+    position: absolute;
+    inset: 0;
+    background: rgba(8,12,16,0.95);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 24px;
+    text-align: center;
+  }
+
+  .cam-error.hidden { display: none; }
+  .cam-error-icon { font-size: 48px; }
+  .cam-error-title { font-size: 18px; font-weight: 700; color: var(--bad); }
+  .cam-error-msg { font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+  /* Responsive */
+  @media (min-width: 600px) {
+    main {
+      flex-direction: row;
+      height: calc(100vh - 57px);
+    }
+    .camera-section {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    .camera-wrapper {
+      flex: 1;
+      aspect-ratio: unset;
+      max-height: unset;
+    }
+    .analysis-panel {
+      width: 320px;
+      overflow-y: auto;
+      border-left: 1px solid var(--border);
+    }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Run<span>Form</span> AI</div>
+  <div class="status-badge">
+    <div class="dot loading" id="statusDot"></div>
+    <span id="statusText">모델 로딩 중</span>
+  </div>
+</header>
+
+<main>
+  <div class="camera-section">
+    <div class="camera-wrapper">
+      <video id="videoEl" autoplay playsinline muted></video>
+      <canvas id="poseCanvas"></canvas>
+
+      <!-- Loading overlay -->
+      <div class="loading-overlay" id="loadingOverlay">
+        <div class="loader-ring"></div>
+        <div class="loading-text">AI 모델 초기화 중...</div>
+        <div class="loading-sub">TensorFlow MoveNet 포즈 감지 모델을<br>불러오고 있습니다. 잠시 기다려주세요.</div>
+      </div>
+
+      <!-- Camera error -->
+      <div class="cam-error hidden" id="camError">
+        <div class="cam-error-icon">📷</div>
+        <div class="cam-error-title">카메라 접근 불가</div>
+        <div class="cam-error-msg" id="camErrorMsg">카메라 권한을 허용해주세요.<br>브라우저 설정에서 카메라 권한을 확인하세요.</div>
+      </div>
+
+      <div class="cam-overlay">
+        <div class="scan-line"></div>
+        <div class="corner tl"></div>
+        <div class="corner tr"></div>
+        <div class="corner bl"></div>
+        <div class="corner br"></div>
+        <div class="fps-counter" id="fpsCounter">-- FPS</div>
+      </div>
+    </div>
+
+    <div class="cam-controls">
+      <button class="btn btn-secondary btn-icon" id="switchCamBtn" title="카메라 전환">🔄</button>
+      <button class="btn btn-primary" id="startBtn">카메라 시작</button>
+      <button class="btn btn-secondary btn-icon" id="toggleSkeletonBtn" title="스켈레톤 표시">🦴</button>
+    </div>
+  </div>
+
+  <div class="analysis-panel" id="analysisPanel">
+    <!-- Score row -->
+    <div>
+      <div class="section-label">종합 자세 점수</div>
+      <div class="score-row">
+        <div class="score-card" id="card-pelvis">
+          <div class="score-icon">🦴</div>
+          <div class="score-value" id="val-pelvis">--</div>
+          <div class="score-label">골반<br>수평도</div>
+        </div>
+        <div class="score-card" id="card-knee">
+          <div class="score-icon">🦵</div>
+          <div class="score-value" id="val-knee">--</div>
+          <div class="score-label">무릎<br>각도</div>
+        </div>
+        <div class="score-card" id="card-ankle">
+          <div class="score-icon">🦶</div>
+          <div class="score-value" id="val-ankle">--</div>
+          <div class="score-label">발목<br>패턴</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Metrics -->
+    <div class="metrics-grid" id="metricsGrid">
+      <div class="metric-row" id="metric-hip">
+        <div class="metric-header">
+          <div class="metric-name">🦴 골반 좌우 기울기</div>
+          <div class="metric-val" id="mval-hip" style="color:var(--muted)">--°</div>
+        </div>
+        <div class="metric-bar-bg"><div class="metric-bar-fill" id="mbar-hip" style="width:0%;background:var(--muted)"></div></div>
+        <div class="metric-status" id="mstatus-hip">카메라를 시작하세요</div>
+      </div>
+
+      <div class="metric-row" id="metric-knee-l">
+        <div class="metric-header">
+          <div class="metric-name">🦵 왼쪽 무릎 각도</div>
+          <div class="metric-val" id="mval-knee-l" style="color:var(--muted)">--°</div>
+        </div>
+        <div class="metric-bar-bg"><div class="metric-bar-fill" id="mbar-knee-l" style="width:0%;background:var(--muted)"></div></div>
+        <div class="metric-status" id="mstatus-knee-l">감지 대기 중</div>
+      </div>
+
+      <div class="metric-row" id="metric-knee-r">
+        <div class="metric-header">
+          <div class="metric-name">🦵 오른쪽 무릎 각도</div>
+          <div class="metric-val" id="mval-knee-r" style="color:var(--muted)">--°</div>
+        </div>
+        <div class="metric-bar-bg"><div class="metric-bar-fill" id="mbar-knee-r" style="width:0%;background:var(--muted)"></div></div>
+        <div class="metric-status" id="mstatus-knee-r">감지 대기 중</div>
+      </div>
+
+      <div class="metric-row" id="metric-ankle-l">
+        <div class="metric-header">
+          <div class="metric-name">🦶 왼쪽 발목 각도</div>
+          <div class="metric-val" id="mval-ankle-l" style="color:var(--muted)">--°</div>
+        </div>
+        <div class="metric-bar-bg"><div class="metric-bar-fill" id="mbar-ankle-l" style="width:0%;background:var(--muted)"></div></div>
+        <div class="metric-status" id="mstatus-ankle-l">감지 대기 중</div>
+      </div>
+
+      <div class="metric-row" id="metric-ankle-r">
+        <div class="metric-header">
+          <div class="metric-name">🦶 오른쪽 발목 각도</div>
+          <div class="metric-val" id="mval-ankle-r" style="color:var(--muted)">--°</div>
+        </div>
+        <div class="metric-bar-bg"><div class="metric-bar-fill" id="mbar-ankle-r" style="width:0%;background:var(--muted)"></div></div>
+        <div class="metric-status" id="mstatus-ankle-r">감지 대기 중</div>
+      </div>
+    </div>
+
+    <!-- Feedback -->
+    <div class="feedback-card">
+      <div class="section-label">실시간 피드백</div>
+      <div class="feedback-list" id="feedbackList">
+        <div class="no-pose-msg">
+          <div class="icon">🏃</div>
+          카메라를 시작하고 뒷모습이<br>화면에 잘 보이도록 서주세요
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- TF.js + MoveNet -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
+
+<script>
+// ────────────────────────────────────────────
+// State
+// ────────────────────────────────────────────
+let detector = null;
+let stream = null;
+let animId = null;
+let facingMode = 'environment';
+let showSkeleton = true;
+let isRunning = false;
+let lastFpsTime = 0;
+let frameCount = 0;
+let fpsValue = 0;
+
+// Smoothing buffers
+const smooth = {};
+function smoothVal(key, val, size = 5) {
+  if (!smooth[key]) smooth[key] = [];
+  smooth[key].push(val);
+  if (smooth[key].length > size) smooth[key].shift();
+  return smooth[key].reduce((a, b) => a + b, 0) / smooth[key].length;
+}
+
+// ────────────────────────────────────────────
+// DOM refs
+// ────────────────────────────────────────────
+const video = document.getElementById('videoEl');
+const canvas = document.getElementById('poseCanvas');
+const ctx = canvas.getContext('2d');
+const loadingOverlay = document.getElementById('loadingOverlay');
+const camError = document.getElementById('camError');
+const camErrorMsg = document.getElementById('camErrorMsg');
+const statusDot = document.getElementById('statusDot');
+const statusText = document.getElementById('statusText');
+const fpsCounter = document.getElementById('fpsCounter');
+const startBtn = document.getElementById('startBtn');
+const switchCamBtn = document.getElementById('switchCamBtn');
+const toggleSkeletonBtn = document.getElementById('toggleSkeletonBtn');
+const feedbackList = document.getElementById('feedbackList');
+
+// ────────────────────────────────────────────
+// MoveNet keypoint indices (COCO 17)
+// 0: nose, 1: l_eye, 2: r_eye, 3: l_ear, 4: r_ear
+// 5: l_shoulder, 6: r_shoulder
+// 7: l_elbow, 8: r_elbow
+// 9: l_wrist, 10: r_wrist
+// 11: l_hip, 12: r_hip
+// 13: l_knee, 14: r_knee
+// 15: l_ankle, 16: r_ankle
+// ────────────────────────────────────────────
+const KP = {
+  L_HIP: 11, R_HIP: 12,
+  L_KNEE: 13, R_KNEE: 14,
+  L_ANKLE: 15, R_ANKLE: 16,
+  L_SHOULDER: 5, R_SHOULDER: 6,
+};
+
+const SKELETON_PAIRS = [
+  [5, 6], [5, 7], [7, 9], [6, 8], [8, 10],
+  [5, 11], [6, 12], [11, 12],
+  [11, 13], [13, 15],
+  [12, 14], [14, 16],
+];
+
+// ────────────────────────────────────────────
+// Init TF + MoveNet
+// ────────────────────────────────────────────
+async function initModel() {
+  try {
+    setStatus('loading', 'AI 모델 로딩 중...');
+    await tf.ready();
+    detector = await poseDetection.createDetector(
+      poseDetection.SupportedModels.MoveNet,
+      { modelType: poseDetection.movenet.modelType.SINGLEPOSE_THUNDER }
+    );
+    setStatus('ready', '모델 준비 완료');
+    loadingOverlay.classList.add('hidden');
+  } catch (e) {
+    console.error('Model init error:', e);
+    setStatus('error', '모델 로딩 실패');
+    loadingOverlay.querySelector('.loading-text').textContent = '모델 로딩 실패';
+    loadingOverlay.querySelector('.loading-sub').textContent = '네트워크 연결을 확인하고 새로고침 해주세요.';
+  }
+}
+
+function setStatus(state, text) {
+  statusText.textContent = text;
+  statusDot.className = 'dot';
+  if (state === 'loading') statusDot.classList.add('loading');
+  else if (state === 'active') statusDot.classList.add('active');
+}
+
+// ────────────────────────────────────────────
+// Camera
+// ────────────────────────────────────────────
+async function startCamera() {
+  if (stream) stopCamera();
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode,
+        width: { ideal: 720 },
+        height: { ideal: 1280 }
+      },
+      audio: false
+    });
+    video.srcObject = stream;
+    await new Promise(resolve => video.onloadedmetadata = resolve);
+    await video.play();
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    isRunning = true;
+    startBtn.textContent = '카메라 중지';
+    startBtn.classList.add('recording');
+    setStatus('active', '분석 중');
+    camError.classList.add('hidden');
+    detectLoop();
+  } catch (e) {
+    console.error('Camera error:', e);
+    camError.classList.remove('hidden');
+    if (e.name === 'NotAllowedError') {
+      camErrorMsg.textContent = '카메라 권한이 거부되었습니다.\n브라우저 주소창 옆 아이콘을 눌러 권한을 허용해주세요.';
+    } else if (e.name === 'NotFoundError') {
+      camErrorMsg.textContent = '카메라를 찾을 수 없습니다.\n카메라가 연결되어 있는지 확인해주세요.';
+    } else {
+      camErrorMsg.textContent = `카메라 오류: ${e.message}`;
+    }
+  }
+}
+
+function stopCamera() {
+  isRunning = false;
+  if (animId) cancelAnimationFrame(animId);
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+  video.srcObject = null;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  startBtn.textContent = '카메라 시작';
+  startBtn.classList.remove('recording');
+  setStatus('ready', '대기 중');
+  resetUI();
+}
+
+// ────────────────────────────────────────────
+// Detection loop
+// ────────────────────────────────────────────
+async function detectLoop() {
+  if (!isRunning) return;
+
+  if (detector && video.readyState >= 2) {
+    try {
+      const poses = await detector.estimatePoses(video);
+      // FPS
+      frameCount++;
+      const now = performance.now();
+      if (now - lastFpsTime > 1000) {
+        fpsValue = Math.round(frameCount * 1000 / (now - lastFpsTime));
+        frameCount = 0;
+        lastFpsTime = now;
+        fpsCounter.textContent = `${fpsValue} FPS`;
+      }
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      if (poses.length > 0) {
+        const pose = poses[0];
+        drawPose(pose);
+        analyzePose(pose);
+      } else {
+        showNoPose();
+      }
+    } catch (e) {
+      console.warn('Detection error:', e);
+    }
+  }
+
+  animId = requestAnimationFrame(detectLoop);
+}
+
+// ────────────────────────────────────────────
+// Drawing
+// ────────────────────────────────────────────
+function kp(pose, idx) {
+  const k = pose.keypoints[idx];
+  return k && k.score > 0.25 ? k : null;
+}
+
+function drawPose(pose) {
+  const w = canvas.width, h = canvas.height;
+  const scaleX = w, scaleY = h;
+
+  if (showSkeleton) {
+    // Draw skeleton lines
+    ctx.lineWidth = 3;
+    for (const [a, b] of SKELETON_PAIRS) {
+      const ka = kp(pose, a);
+      const kb = kp(pose, b);
+      if (!ka || !kb) continue;
+      const isLower = [KP.L_HIP, KP.R_HIP, KP.L_KNEE, KP.R_KNEE, KP.L_ANKLE, KP.R_ANKLE].includes(a) ||
+                      [KP.L_HIP, KP.R_HIP, KP.L_KNEE, KP.R_KNEE, KP.L_ANKLE, KP.R_ANKLE].includes(b);
+      ctx.beginPath();
+      ctx.moveTo(ka.x, ka.y);
+      ctx.lineTo(kb.x, kb.y);
+      ctx.strokeStyle = isLower ? 'rgba(0,229,255,0.7)' : 'rgba(168,255,62,0.5)';
+      ctx.stroke();
+    }
+  }
+
+  // Draw key joint circles with labels
+  const keyJoints = [
+    { idx: KP.L_HIP,   label: '좌골반', color: '#ff3d71', size: 10 },
+    { idx: KP.R_HIP,   label: '우골반', color: '#ff3d71', size: 10 },
+    { idx: KP.L_KNEE,  label: '좌무릎', color: '#00e5ff', size: 9 },
+    { idx: KP.R_KNEE,  label: '우무릎', color: '#00e5ff', size: 9 },
+    { idx: KP.L_ANKLE, label: '좌발목', color: '#a8ff3e', size: 8 },
+    { idx: KP.R_ANKLE, label: '우발목', color: '#a8ff3e', size: 8 },
+  ];
+
+  for (const joint of keyJoints) {
+    const k = kp(pose, joint.idx);
+    if (!k) continue;
+
+    // Outer glow ring
+    ctx.beginPath();
+    ctx.arc(k.x, k.y, joint.size + 5, 0, Math.PI * 2);
+    ctx.fillStyle = joint.color + '22';
+    ctx.fill();
+
+    // Main circle
+    ctx.beginPath();
+    ctx.arc(k.x, k.y, joint.size, 0, Math.PI * 2);
+    ctx.fillStyle = joint.color;
+    ctx.fill();
+
+    // Inner dot
+    ctx.beginPath();
+    ctx.arc(k.x, k.y, 3, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+
+    // Label
+    ctx.font = 'bold 11px Noto Sans KR, sans-serif';
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+    ctx.lineWidth = 3;
+    ctx.strokeText(joint.label, k.x, k.y - joint.size - 6);
+    ctx.fillText(joint.label, k.x, k.y - joint.size - 6);
+  }
+
+  // Draw angle arcs
+  drawAngleArc(pose, KP.L_HIP, KP.L_KNEE, KP.L_ANKLE, '#00e5ff');
+  drawAngleArc(pose, KP.R_HIP, KP.R_KNEE, KP.R_ANKLE, '#00e5ff');
+
+  // Draw pelvis line
+  const lhip = kp(pose, KP.L_HIP);
+  const rhip = kp(pose, KP.R_HIP);
+  if (lhip && rhip) {
+    ctx.beginPath();
+    ctx.moveTo(lhip.x, lhip.y);
+    ctx.lineTo(rhip.x, rhip.y);
+    ctx.strokeStyle = 'rgba(255,61,113,0.9)';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([6, 3]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Midpoint dot
+    const mx = (lhip.x + rhip.x) / 2;
+    const my = (lhip.y + rhip.y) / 2;
+    ctx.beginPath();
+    ctx.arc(mx, my, 5, 0, Math.PI * 2);
+    ctx.fillStyle = '#ff3d71';
+    ctx.fill();
+  }
+}
+
+function drawAngleArc(pose, idxA, idxB, idxC, color) {
+  const a = kp(pose, idxA);
+  const b = kp(pose, idxB);
+  const c = kp(pose, idxC);
+  if (!a || !b || !c) return;
+
+  const angle = calcAngle(a, b, c);
+  const radius = 22;
+
+  const ang1 = Math.atan2(a.y - b.y, a.x - b.x);
+  const ang2 = Math.atan2(c.y - b.y, c.x - b.x);
+
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, radius, ang1, ang2);
+  ctx.strokeStyle = color + 'aa';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  // Angle text
+  ctx.font = 'bold 12px Space Mono, monospace';
+  ctx.fillStyle = color;
+  ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+  ctx.lineWidth = 3;
+  ctx.textAlign = 'center';
+  const tx = b.x + 36;
+  const ty = b.y;
+  ctx.strokeText(`${Math.round(angle)}°`, tx, ty);
+  ctx.fillText(`${Math.round(angle)}°`, tx, ty);
+}
+
+// ────────────────────────────────────────────
+// Math helpers
+// ────────────────────────────────────────────
+function calcAngle(a, b, c) {
+  const ab = { x: a.x - b.x, y: a.y - b.y };
+  const cb = { x: c.x - b.x, y: c.y - b.y };
+  const dot = ab.x * cb.x + ab.y * cb.y;
+  const cross = Math.abs(ab.x * cb.y - ab.y * cb.x);
+  return Math.atan2(cross, dot) * (180 / Math.PI);
+}
+
+function calcTilt(p1, p2) {
+  return Math.abs(Math.atan2(p2.y - p1.y, p2.x - p1.x) * (180 / Math.PI));
+}
+
+// ────────────────────────────────────────────
+// Analysis
+// ────────────────────────────────────────────
+function analyzePose(pose) {
+  const lhip = kp(pose, KP.L_HIP);
+  const rhip = kp(pose, KP.R_HIP);
+  const lknee = kp(pose, KP.L_KNEE);
+  const rknee = kp(pose, KP.R_KNEE);
+  const lankle = kp(pose, KP.L_ANKLE);
+  const rankle = kp(pose, KP.R_ANKLE);
+
+  const feedback = [];
+  let pelvisScore = '--', kneeScore = '--', ankleScore = '--';
+  let pelvisClass = '', kneeClass = '', ankleClass = '';
+
+  // ── Pelvis tilt
+  if (lhip && rhip) {
+    const rawTilt = calcTilt(lhip, rhip);
+    const tilt = smoothVal('hipTilt', rawTilt);
+    const pct = Math.min(100, (tilt / 15) * 100);
+
+    let color, status, grade;
+    if (tilt < 3) {
+      color = 'var(--ok)'; status = '✅ 골반이 수평으로 안정적입니다'; grade = 'ok';
+      pelvisScore = '좋음'; pelvisClass = 'ok';
+      feedback.push({ type: 'ok', text: '골반 수평도가 매우 좋습니다. 안정적인 코어를 유지하고 있어요.' });
+    } else if (tilt < 7) {
+      color = 'var(--warn)'; status = '⚠️ 골반이 약간 기울어져 있습니다'; grade = 'warn';
+      pelvisScore = '보통'; pelvisClass = 'warn';
+      feedback.push({ type: 'warn', text: `골반이 약 ${tilt.toFixed(1)}° 기울어져 있습니다. 코어 근력 운동을 추천드려요.` });
+    } else {
+      color = 'var(--bad)'; status = '❌ 골반 기울기가 과도합니다'; grade = 'bad';
+      pelvisScore = '주의'; pelvisClass = 'bad';
+      feedback.push({ type: 'bad', text: `골반이 ${tilt.toFixed(1)}° 이상 기울어 부상 위험이 있습니다. 러닝 폼을 점검하세요.` });
+    }
+
+    updateMetric('hip', `${tilt.toFixed(1)}°`, pct, color, status);
+    updateCard('pelvis', pelvisScore, pelvisClass);
+  }
+
+  // ── Knee angles
+  let kneeOk = 0, kneeWarn = 0;
+  if (lhip && lknee && lankle) {
+    const rawAng = calcAngle(lhip, lknee, lankle);
+    const ang = smoothVal('lKneeAng', rawAng);
+    const pct = Math.min(100, (ang / 180) * 100);
+    let color, status;
+    if (ang >= 140 && ang <= 175) {
+      color = 'var(--ok)'; status = '✅ 정상 범위 (140~175°)'; kneeOk++;
+    } else if (ang < 130) {
+      color = 'var(--bad)'; status = `❌ 무릎 과굴곡 (${ang.toFixed(0)}°)`;
+      feedback.push({ type: 'bad', text: `왼쪽 무릎이 과도하게 굽혀집니다 (${ang.toFixed(0)}°). 보폭을 줄여보세요.` });
+      kneeWarn++;
+    } else {
+      color = 'var(--warn)'; status = '⚠️ 약간 낮은 범위'; kneeWarn++;
+    }
+    updateMetric('knee-l', `${ang.toFixed(0)}°`, pct, color, status);
+  }
+
+  if (rhip && rknee && rankle) {
+    const rawAng = calcAngle(rhip, rknee, rankle);
+    const ang = smoothVal('rKneeAng', rawAng);
+    const pct = Math.min(100, (ang / 180) * 100);
+    let color, status;
+    if (ang >= 140 && ang <= 175) {
+      color = 'var(--ok)'; status = '✅ 정상 범위 (140~175°)'; kneeOk++;
+    } else if (ang < 130) {
+      color = 'var(--bad)'; status = `❌ 무릎 과굴곡 (${ang.toFixed(0)}°)`;
+      feedback.push({ type: 'bad', text: `오른쪽 무릎이 과도하게 굽혀집니다 (${ang.toFixed(0)}°). 보폭을 줄여보세요.` });
+      kneeWarn++;
+    } else {
+      color = 'var(--warn)'; status = '⚠️ 약간 낮은 범위'; kneeWarn++;
+    }
+    updateMetric('knee-r', `${ang.toFixed(0)}°`, pct, color, status);
+  }
+
+  if (kneeOk >= 1) { kneeScore = '좋음'; kneeClass = 'ok'; }
+  else if (kneeWarn > 0) { kneeScore = '주의'; kneeClass = 'warn'; }
+  updateCard('knee', kneeScore, kneeClass);
+
+  // ── Ankle angles
+  let ankleOk = 0, ankleWarn = 0;
+  if (lknee && lankle) {
+    const rawAng = Math.abs(Math.atan2(lankle.y - lknee.y, lankle.x - lknee.x) * (180 / Math.PI));
+    const ang = smoothVal('lAnkleAng', rawAng);
+    const pct = Math.min(100, (ang / 90) * 100);
+    let color, status;
+    if (ang >= 75 && ang <= 90) {
+      color = 'var(--ok)'; status = '✅ 정상 착지 패턴'; ankleOk++;
+    } else if (ang < 65) {
+      color = 'var(--bad)'; status = '❌ 발목 각도 주의';
+      feedback.push({ type: 'bad', text: '왼쪽 발목 착지 각도가 낮습니다. 뒤꿈치 착지를 줄이고 미드풋 착지를 연습해보세요.' });
+      ankleWarn++;
+    } else {
+      color = 'var(--warn)'; status = '⚠️ 착지 패턴 개선 필요'; ankleWarn++;
+    }
+    updateMetric('ankle-l', `${ang.toFixed(0)}°`, pct, color, status);
+  }
+
+  if (rknee && rankle) {
+    const rawAng = Math.abs(Math.atan2(rankle.y - rknee.y, rankle.x - rknee.x) * (180 / Math.PI));
+    const ang = smoothVal('rAnkleAng', rawAng);
+    const pct = Math.min(100, (ang / 90) * 100);
+    let color, status;
+    if (ang >= 75 && ang <= 90) {
+      color = 'var(--ok)'; status = '✅ 정상 착지 패턴'; ankleOk++;
+    } else if (ang < 65) {
+      color = 'var(--bad)'; status = '❌ 발목 각도 주의';
+      feedback.push({ type: 'bad', text: '오른쪽 발목 착지 각도가 낮습니다. 발목 유연성 운동을 추천드려요.' });
+      ankleWarn++;
+    } else {
+      color = 'var(--warn)'; status = '⚠️ 착지 패턴 개선 필요'; ankleWarn++;
+    }
+    updateMetric('ankle-r', `${ang.toFixed(0)}°`, pct, color, status);
+  }
+
+  if (ankleOk >= 1) { ankleScore = '좋음'; ankleClass = 'ok'; }
+  else if (ankleWarn > 0) { ankleScore = '주의'; ankleClass = 'warn'; }
+  updateCard('ankle', ankleScore, ankleClass);
+
+  // Feedback panel
+  if (feedback.length === 0 && (lhip || lknee || lankle)) {
+    feedback.push({ type: 'ok', text: '전반적인 달리기 자세가 양호합니다. 이 폼을 유지하세요! 💪' });
+  }
+
+  renderFeedback(feedback);
+}
+
+// ────────────────────────────────────────────
+// UI helpers
+// ────────────────────────────────────────────
+function updateCard(id, value, grade) {
+  document.getElementById(`val-${id}`).textContent = value;
+  const card = document.getElementById(`card-${id}`);
+  card.className = 'score-card' + (grade ? ' ' + grade : '');
+}
+
+function updateMetric(id, value, pct, color, status) {
+  document.getElementById(`mval-${id}`).textContent = value;
+  document.getElementById(`mval-${id}`).style.color = color;
+  const bar = document.getElementById(`mbar-${id}`);
+  bar.style.width = pct + '%';
+  bar.style.background = color;
+  document.getElementById(`mstatus-${id}`).textContent = status;
+}
+
+function renderFeedback(items) {
+  if (!items.length) return;
+  feedbackList.innerHTML = items.map(f => `
+    <div class="feedback-item ${f.type}">
+      <div class="feedback-dot"></div>
+      <div>${f.text}</div>
+    </div>
+  `).join('');
+}
+
+function showNoPose() {
+  feedbackList.innerHTML = `
+    <div class="no-pose-msg">
+      <div class="icon">🔍</div>
+      자세가 감지되지 않습니다.<br>
+      카메라에서 조금 더 멀리 서거나<br>
+      조명을 밝게 해주세요
+    </div>
+  `;
+}
+
+function resetUI() {
+  ['pelvis','knee','ankle'].forEach(id => updateCard(id, '--', ''));
+  ['hip','knee-l','knee-r','ankle-l','ankle-r'].forEach(id => {
+    updateMetric(id, '--°', 0, 'var(--muted)', '카메라를 시작하세요');
+  });
+  feedbackList.innerHTML = `<div class="no-pose-msg"><div class="icon">🏃</div>카메라를 시작하고 뒷모습이<br>화면에 잘 보이도록 서주세요</div>`;
+}
+
+// ────────────────────────────────────────────
+// Event listeners
+// ────────────────────────────────────────────
+startBtn.addEventListener('click', () => {
+  if (isRunning) stopCamera();
+  else startCamera();
+});
+
+switchCamBtn.addEventListener('click', () => {
+  facingMode = facingMode === 'environment' ? 'user' : 'environment';
+  if (isRunning) startCamera();
+});
+
+toggleSkeletonBtn.addEventListener('click', () => {
+  showSkeleton = !showSkeleton;
+  toggleSkeletonBtn.style.opacity = showSkeleton ? '1' : '0.4';
+});
+
+// ────────────────────────────────────────────
+// Boot
+// ────────────────────────────────────────────
+initModel();
+</script>
+</body>
+</html>
